@@ -9,7 +9,6 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 
-	"fees-api/activities"
 	"fees-api/workflow"
 )
 
@@ -26,8 +25,8 @@ func main() {
 
 	// Register your workflow and activities with the worker
 	w.RegisterWorkflow(workflow.BillWorkflow)
-	w.RegisterActivity(activities.FinalizeBillActivity)
-	w.RegisterActivity(activities.PersistLineItemActivity)
+	w.RegisterActivity(workflow.FinalizeBillActivity)
+	w.RegisterActivity(workflow.PersistLineItemActivity)
 
 	// Start listening to the task queue in a separate goroutine
 	errCh := make(chan error, 1)

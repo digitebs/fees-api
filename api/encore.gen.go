@@ -13,8 +13,10 @@ import "context"
 // Raw endpoints are currently excluded from this interface, as Encore does not yet
 // support service-to-service API calls to raw endpoints.
 type Interface interface {
+	// Create creates a new bill with the specified currency and starts a Temporal workflow.
 	Create(ctx context.Context, p CreateBillRequest) (GetBillResponse, error)
 
+	// GetBillAPI retrieves a bill and its line items by ID.
 	GetBillAPI(ctx context.Context, id string) (*GetBillResponse, error)
 
 	AddItem(ctx context.Context, id string, p AddItemRequest) error

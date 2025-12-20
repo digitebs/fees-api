@@ -6,3 +6,7 @@ CREATE TABLE bills (
     created_at TIMESTAMP NOT NULL,
     closed_at TIMESTAMP
 );
+
+-- Add indexes for better query performance
+CREATE INDEX idx_bills_status ON bills(status);
+CREATE INDEX idx_bills_created_at ON bills(created_at DESC);

@@ -18,6 +18,41 @@ func getDB() *sqldb.Database {
 	return db
 }
 
+// scanBill reconstructs a Bill domain object from database row data
+func scanBill(row interface{ Scan(...interface{}) error }) (*Bill, error) {
+	var (
+		b           Bill
+		currencyStr string
+		totalAmount int64
+		closedAt    sql.NullTime
+	)
+
+	err := row.Scan(
+		&b.ID,
+		&currencyStr,
+		&b.Status,
+		&totalAmount,
+		&b.CreatedAt,
+		&closedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// reconstruct domain money
+	m, err := money.NewMoney(totalAmount, money.Currency(currencyStr))
+	if err != nil {
+		return nil, err
+	}
+	b.Total = m
+
+	if closedAt.Valid {
+		b.ClosedAt = &closedAt.Time
+	}
+
+	return &b, nil
+}
+
 func CreateBill(ctx context.Context, bill *Bill) error {
 	_, err := getDB().Exec(ctx, `
         INSERT INTO bills (id, currency, status, total_amount, created_at)
@@ -41,22 +76,7 @@ func GetBill(ctx context.Context, billID string) (*Bill, error) {
         WHERE id = $1
     `, billID)
 
-	var (
-		b           Bill
-		currencyStr string
-		totalAmount int64
-		closedAt    sql.NullTime
-	)
-
-	err := row.Scan(
-		&b.ID,
-		&currencyStr,
-		&b.Status,
-		&totalAmount,
-		&b.CreatedAt,
-		&closedAt,
-	)
-
+	bill, err := scanBill(row)
 	if err == sql.ErrNoRows {
 		return nil, ErrBillNotFound
 	}
@@ -64,18 +84,7 @@ func GetBill(ctx context.Context, billID string) (*Bill, error) {
 		return nil, err
 	}
 
-	// reconstruct domain money
-	m, err := money.NewMoney(totalAmount, money.Currency(currencyStr))
-	if err != nil {
-		return nil, err
-	}
-	b.Total = m
-
-	if closedAt.Valid {
-		b.ClosedAt = &closedAt.Time
-	}
-
-	return &b, nil
+	return bill, nil
 }
 
 func UpdateBill(ctx context.Context, b *Bill) error {
@@ -108,37 +117,12 @@ func ListBillsByStatus(
 	defer rows.Close()
 
 	var bills []*Bill
-
 	for rows.Next() {
-		var (
-			b           Bill
-			currencyStr string
-			totalAmount int64
-			closedAt    sql.NullTime
-		)
-
-		if err := rows.Scan(
-			&b.ID,
-			&currencyStr,
-			&b.Status,
-			&totalAmount,
-			&b.CreatedAt,
-			&closedAt,
-		); err != nil {
-			return nil, err
-		}
-
-		m, err := money.NewMoney(totalAmount, money.Currency(currencyStr))
+		bill, err := scanBill(rows)
 		if err != nil {
 			return nil, err
 		}
-		b.Total = m
-
-		if closedAt.Valid {
-			b.ClosedAt = &closedAt.Time
-		}
-
-		bills = append(bills, &b)
+		bills = append(bills, bill)
 	}
 
 	return bills, nil
@@ -162,37 +146,12 @@ func ListBillsAll(ctx context.Context) ([]*Bill, error) {
 	defer rows.Close()
 
 	var bills []*Bill
-
 	for rows.Next() {
-		var (
-			b           Bill
-			currencyStr string
-			totalAmount int64
-			closedAt    sql.NullTime
-		)
-
-		if err := rows.Scan(
-			&b.ID,
-			&currencyStr,
-			&b.Status,
-			&totalAmount,
-			&b.CreatedAt,
-			&closedAt,
-		); err != nil {
-			return nil, err
-		}
-
-		m, err := money.NewMoney(totalAmount, money.Currency(currencyStr))
+		bill, err := scanBill(rows)
 		if err != nil {
 			return nil, err
 		}
-		b.Total = m
-
-		if closedAt.Valid {
-			b.ClosedAt = &closedAt.Time
-		}
-
-		bills = append(bills, &b)
+		bills = append(bills, bill)
 	}
 
 	return bills, nil

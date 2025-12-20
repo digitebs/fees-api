@@ -3,7 +3,6 @@ package workflow
 import (
 	"time"
 
-	"fees-api/activities"
 	"fees-api/money"
 	"fees-api/types"
 
@@ -17,9 +16,15 @@ type BillState struct {
 	Closed bool
 }
 
+// BillWorkflow manages the lifecycle of a bill, handling item additions and bill closure.
+// It uses Temporal workflow patterns to ensure consistency and reliability.
 func BillWorkflow(ctx workflow.Context, billID string, currency money.Currency) error {
+	logger := workflow.GetLogger(ctx)
+	logger.Info("Starting bill workflow", "billID", billID, "currency", currency)
+
 	total, err := money.NewMoney(0, currency)
 	if err != nil {
+		logger.Error("Failed to create initial money", "error", err)
 		return err
 	}
 
@@ -36,7 +41,8 @@ func BillWorkflow(ctx workflow.Context, billID string, currency money.Currency) 
 		MaximumAttempts:    5,
 	}
 	activityOptions := workflow.ActivityOptions{
-		RetryPolicy: retryPolicy,
+		StartToCloseTimeout: time.Minute * 5,
+		RetryPolicy:         retryPolicy,
 	}
 	ctx = workflow.WithActivityOptions(ctx, activityOptions)
 
@@ -68,8 +74,8 @@ func BillWorkflow(ctx workflow.Context, billID string, currency money.Currency) 
 
 			err = workflow.ExecuteActivity(
 				ctx,
-				activities.PersistLineItemActivity,
-				activities.LineItemInput{
+				PersistLineItemActivity,
+				LineItemInput{
 					ID:          s.ItemID,
 					BillID:      state.BillID,
 					Amount:      itemMoney,
@@ -105,7 +111,7 @@ func BillWorkflow(ctx workflow.Context, billID string, currency money.Currency) 
 
 	return workflow.ExecuteActivity(
 		ctx,
-		activities.FinalizeBillActivity,
+		FinalizeBillActivity,
 		state,
 		time.Now(),
 	).Get(ctx, nil)

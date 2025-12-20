@@ -12,16 +12,14 @@ var (
 	once   sync.Once
 )
 
-func InitClient(addr string) {
+// GetClient returns the Temporal client, initializing it with the provided server address.
+func GetClient(serverAddr string) client.Client {
 	once.Do(func() {
-		c, err := client.Dial(client.Options{HostPort: addr})
+		c, err := client.Dial(client.Options{HostPort: serverAddr})
 		if err != nil {
 			log.Fatalf("unable to create Temporal client: %v", err)
 		}
 		Client = c
 	})
-}
-
-func GetClient() client.Client {
 	return Client
 }

@@ -14,17 +14,17 @@ const (
 )
 
 type Bill struct {
-	ID        string
-	Status    Status
-	Total     money.Money
-	CreatedAt time.Time
-	ClosedAt  *time.Time
+	ID        string      `json:"id"`
+	Status    Status      `json:"status"`
+	Total     money.Money `json:"total"`
+	CreatedAt time.Time   `json:"created_at"`
+	ClosedAt  *time.Time  `json:"closed_at,omitempty"` // omit if nil
 }
 
 type LineItem struct {
-	ID          string
-	BillID      string
-	Amount      money.Money
-	Description string
-	CreatedAt   time.Time
+	ID          string      `json:"id"`
+	BillID      string      `json:"bill_id"`
+	Amount      money.Money `json:"amount"`
+	Description string      `json:"description"`
+	CreatedAt   time.Time   `json:"created_at"`
 }
