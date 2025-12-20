@@ -50,7 +50,6 @@ func BillWorkflow(ctx workflow.Context, billID string, currency money.Currency) 
 	closeCh := workflow.GetSignalChannel(ctx, "close-bill")
 
 	for {
-		print("11111")
 		selector := workflow.NewSelector(ctx)
 
 		selector.AddReceive(addItemCh, func(c workflow.ReceiveChannel, more bool) {
@@ -98,11 +97,11 @@ func BillWorkflow(ctx workflow.Context, billID string, currency money.Currency) 
 
 			state.Total = newTotal
 		})
-		print("2222")
+
 		selector.AddReceive(closeCh, func(c workflow.ReceiveChannel, more bool) {
 			state.Closed = true
 		})
-		print("3333")
+
 		selector.Select(ctx)
 
 		if state.Closed {
