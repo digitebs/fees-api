@@ -1,0 +1,12 @@
+{
+    "servers": {
+        "encore-mcp": {
+            "args": [
+                "mcp",
+                "run",
+                "--app=fees-api-v73i"
+            ],
+            "command": "encore"
+        }
+    }
+}
