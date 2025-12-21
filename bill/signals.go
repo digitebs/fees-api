@@ -1,4 +1,4 @@
-package types
+package bill
 
 type AddItemSignal struct {
 	ItemID      string

@@ -1,12 +1,24 @@
-package workflow
+package bill
 
 import (
 	"context"
 	"time"
 
-	"fees-api/bill"
 	"fees-api/money"
 )
+
+func FinalizeBillActivity(ctx context.Context, state BillState, closedAt time.Time) error {
+	b, err := GetBill(ctx, state.BillID)
+	if err != nil {
+		return err
+	}
+
+	b.Status = Closed
+	b.Total = state.Total
+	b.ClosedAt = &closedAt
+
+	return UpdateBill(ctx, b)
+}
 
 type LineItemInput struct {
 	ID          string
@@ -16,7 +28,7 @@ type LineItemInput struct {
 }
 
 func PersistLineItemActivity(ctx context.Context, in LineItemInput) error {
-	item := &bill.LineItem{
+	item := &LineItem{
 		ID:          in.ID,
 		BillID:      in.BillID,
 		Amount:      in.Amount,
@@ -24,5 +36,5 @@ func PersistLineItemActivity(ctx context.Context, in LineItemInput) error {
 		CreatedAt:   time.Now(),
 	}
 
-	return bill.InsertLineItem(ctx, item)
+	return InsertLineItem(ctx, item)
 }

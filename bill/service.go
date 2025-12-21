@@ -8,7 +8,6 @@ import (
 
 	"fees-api/money"
 	"fees-api/temporal"
-	"fees-api/types"
 
 	"encore.dev/beta/errs"
 	"encore.dev/config"
@@ -24,6 +23,12 @@ var (
 
 //encore:service
 type Service struct{}
+
+//encore:api private
+func (s *Service) HealthCheck(ctx context.Context) error {
+	// Could add actual health checks here
+	return nil
+}
 
 // Create creates a new bill with the specified currency and starts a Temporal workflow
 func Create(ctx context.Context, currency money.Currency) (*Bill, error) {
@@ -103,7 +108,7 @@ func AddLineItem(ctx context.Context, billID string, amount int64, description s
 		return errs.Wrap(err, "failed to add item workflow")
 	}
 
-	signal := types.AddItemSignal{
+	signal := AddItemSignal{
 		ItemID:      uuid.NewString(),
 		Amount:      amount,
 		Description: description,

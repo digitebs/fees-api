@@ -1,10 +1,9 @@
-package workflow
+package bill
 
 import (
 	"time"
 
 	"fees-api/money"
-	"fees-api/types"
 
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
@@ -53,7 +52,7 @@ func BillWorkflow(ctx workflow.Context, billID string, currency money.Currency) 
 		selector := workflow.NewSelector(ctx)
 
 		selector.AddReceive(addItemCh, func(c workflow.ReceiveChannel, more bool) {
-			var s types.AddItemSignal
+			var s AddItemSignal
 			c.Receive(ctx, &s)
 
 			// Add input validation
