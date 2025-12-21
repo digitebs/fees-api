@@ -16,9 +16,9 @@ import (
 )
 
 var (
-	temporalCfg      = config.Load[*Config]()
-	temporalClient   client.Client
-	temporalClientMu sync.Mutex
+	temporalCfg    = config.Load[*Config]()
+	temporalClient client.Client
+	temporalOnce   sync.Once
 )
 
 //encore:service
@@ -130,13 +130,9 @@ func AddLineItem(ctx context.Context, billID string, amount int64, description s
 
 // GetTemporalClient returns the temporal client initialized for this service
 func GetTemporalClient() client.Client {
-	temporalClientMu.Lock()
-	defer temporalClientMu.Unlock()
-
-	if temporalClient == nil {
+	temporalOnce.Do(func() {
 		temporalClient = temporal.GetClient(temporalCfg.TemporalServer)
-	}
-
+	})
 	return temporalClient
 }
 
