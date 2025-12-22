@@ -3,16 +3,17 @@ package bill
 import (
 	"context"
 	"errors"
+	"log"
 	"sync"
 	"time"
 
 	"fees-api/money"
-	"fees-api/temporal"
 
 	"encore.dev/beta/errs"
 	"encore.dev/config"
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/temporal"
 )
 
 var (
@@ -32,39 +33,65 @@ func (s *Service) HealthCheck(ctx context.Context) error {
 
 // Create creates a new bill with the specified currency and starts a Temporal workflow
 func Create(ctx context.Context, currency money.Currency) (*Bill, error) {
+	// Check if Temporal is available
+	if GetTemporalClient() == nil {
+		return nil, errs.WrapCode(nil, errs.Unavailable,
+			"bill creation unavailable - Temporal workflow service is down")
+	}
+
+	billID := uuid.NewString()
+
+	retryPolicy := &temporal.RetryPolicy{
+		InitialInterval:    time.Second,
+		BackoffCoefficient: 2.0,
+		MaximumInterval:    time.Minute,
+		MaximumAttempts:    3,
+	}
+
+	// Start Temporal workflow FIRST to avoid race condition
+	_, err := GetTemporalClient().ExecuteWorkflow(
+		ctx,
+		client.StartWorkflowOptions{
+			ID:          "bill-" + billID,
+			TaskQueue:   "BILLING_TASK_QUEUE",
+			RetryPolicy: retryPolicy,
+		},
+		"BillWorkflow",
+		billID,
+		currency,
+	)
+	if err != nil {
+		return nil, errs.Wrap(err, "failed to start bill workflow")
+	}
+
+	// Create bill in database AFTER workflow successfully started
 	total, err := money.NewMoney(0, currency)
 	if err != nil {
-		return nil, err
+		return nil, errs.Wrap(err, "failed to create initial money amount")
 	}
+
 	bill := &Bill{
-		ID:        uuid.NewString(),
+		ID:        billID,
 		Total:     total,
 		Status:    Open,
 		CreatedAt: time.Now(),
 	}
-
 	if err := CreateBill(ctx, bill); err != nil {
-		return nil, err
+		// Workflow started but bill creation failed
+		_ = GetTemporalClient().TerminateWorkflow(ctx, "bill-"+billID, "", "Database creation failed", nil)
+		return nil, errs.Wrap(err, "workflow started but bill creation failed")
 	}
-
-	// Start Temporal workflow
-	_, err = GetTemporalClient().ExecuteWorkflow(
-		ctx,
-		client.StartWorkflowOptions{
-			ID:        "bill-" + bill.ID,
-			TaskQueue: "BILLING_TASK_QUEUE",
-		},
-		"BillWorkflow",
-		bill.ID,
-		currency,
-	)
 
 	return bill, nil
 }
 
 // GetByID retrieves a bill by ID
 func GetByID(ctx context.Context, billID string) (*Bill, error) {
-	return GetBill(ctx, billID)
+	bill, err := GetBill(ctx, billID)
+	if err != nil {
+		return nil, errs.WrapCode(err, errs.NotFound, "bill not found")
+	}
+	return bill, nil
 }
 
 // GetLineItems retrieves line items for a bill
@@ -74,9 +101,15 @@ func GetLineItems(ctx context.Context, billID string) ([]*LineItem, error) {
 
 // Close closes a bill by signaling the Temporal workflow
 func Close(ctx context.Context, billID string) error {
+	// Check if Temporal is available
+	if GetTemporalClient() == nil {
+		return errs.WrapCode(nil, errs.Unavailable,
+			"bill operations unavailable - Temporal workflow service is down")
+	}
+
 	bill, err := GetByID(ctx, billID)
 	if err != nil {
-		return errs.Wrap(err, "error fetching bill")
+		return err
 	}
 
 	if err := ensureOpen(bill); err != nil {
@@ -99,9 +132,15 @@ func Close(ctx context.Context, billID string) error {
 
 // AddLineItem adds a line item to a bill by signaling the Temporal workflow
 func AddLineItem(ctx context.Context, billID string, amount int64, description string) error {
+	// Check if Temporal is available
+	if GetTemporalClient() == nil {
+		return errs.WrapCode(nil, errs.Unavailable,
+			"bill operations unavailable - Temporal workflow service is down")
+	}
+
 	bill, err := GetByID(ctx, billID)
 	if err != nil {
-		return errs.Wrap(err, "bill not found")
+		return err
 	}
 
 	if err := ensureOpen(bill); err != nil {
@@ -129,9 +168,16 @@ func AddLineItem(ctx context.Context, billID string, amount int64, description s
 }
 
 // GetTemporalClient returns the temporal client initialized for this service
+// Returns nil if Temporal server is unavailable (logs warning)
 func GetTemporalClient() client.Client {
 	temporalOnce.Do(func() {
-		temporalClient = temporal.GetClient(temporalCfg.TemporalServer)
+		client, err := client.Dial(client.Options{HostPort: temporalCfg.TemporalServer})
+		if err != nil {
+			log.Printf("WARNING: Temporal server unavailable at %s: %v. Bill workflow operations will fail.",
+				temporalCfg.TemporalServer, err)
+			return // temporalClient remains nil
+		}
+		temporalClient = client
 	})
 	return temporalClient
 }

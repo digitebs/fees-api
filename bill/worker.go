@@ -17,7 +17,7 @@ func initService() (*Service, error) {
 	// Register your workflow and activities with the worker
 	w.RegisterWorkflow(BillWorkflow)
 	w.RegisterActivity(FinalizeBillActivity)
-	w.RegisterActivity(PersistLineItemActivity)
+	w.RegisterActivity(AddLineItemActivity)
 
 	// Start listening to the task queue in a separate goroutine
 	go func() {

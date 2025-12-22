@@ -1,10 +1,13 @@
 package bill
 
 import (
+	"errors"
+	"strings"
 	"time"
 
 	"fees-api/money"
 
+	"github.com/google/uuid"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
@@ -55,13 +58,14 @@ func BillWorkflow(ctx workflow.Context, billID string, currency money.Currency) 
 			var s AddItemSignal
 			c.Receive(ctx, &s)
 
-			// Add input validation
-			if s.ItemID == "" || s.Amount <= 0 || s.Description == "" {
-				workflow.GetLogger(ctx).Warn("invalid add item signal", "signal", s)
+			// Enhanced signal validation
+			if err := validateAddItemSignal(s); err != nil {
+				workflow.GetLogger(ctx).Error("invalid add item signal", "error", err, "signal", s)
 				return
 			}
 
 			if state.Closed {
+				workflow.GetLogger(ctx).Warn("attempted to add item to closed bill", "billID", state.BillID)
 				return
 			}
 
@@ -71,29 +75,30 @@ func BillWorkflow(ctx workflow.Context, billID string, currency money.Currency) 
 				return
 			}
 
+			// Use transactional activity that handles both line item insertion and total update atomically
 			err = workflow.ExecuteActivity(
 				ctx,
-				PersistLineItemActivity,
-				LineItemInput{
-					ID:          s.ItemID,
+				AddLineItemActivity,
+				AddLineItemInput{
+					ItemID:      s.ItemID,
 					BillID:      state.BillID,
 					Amount:      itemMoney,
 					Description: s.Description,
+					CreatedAt:   workflow.Now(ctx), // Use workflow time for determinism
 				},
 			).Get(ctx, nil)
 			if err != nil {
-				workflow.GetLogger(ctx).Error("failed to persist line item after retries", "err", err)
-				// Do not update total to maintain consistency
+				workflow.GetLogger(ctx).Error("failed to add line item transactionally", "err", err)
 				return
 			}
 
-			// Only update total after successful persistence
+			// Update workflow state after successful transactional activity
+			// Add the new item amount to the running total
 			newTotal, err := state.Total.Add(itemMoney)
 			if err != nil {
-				workflow.GetLogger(ctx).Error("currency mismatch", "err", err)
+				workflow.GetLogger(ctx).Error("failed to add item to total", "err", err)
 				return
 			}
-
 			state.Total = newTotal
 		})
 
@@ -111,7 +116,42 @@ func BillWorkflow(ctx workflow.Context, billID string, currency money.Currency) 
 	return workflow.ExecuteActivity(
 		ctx,
 		FinalizeBillActivity,
-		state,
-		time.Now(),
+		state.BillID,
+		workflow.Now(ctx), // Use workflow time for determinism
 	).Get(ctx, nil)
+}
+
+// validateAddItemSignal performs comprehensive validation of add item signals
+func validateAddItemSignal(s AddItemSignal) error {
+	// Validate ItemID format (must be valid UUID)
+	if s.ItemID == "" {
+		return errors.New("item ID is required")
+	}
+	if _, err := uuid.Parse(s.ItemID); err != nil {
+		return errors.New("item ID must be a valid UUID")
+	}
+
+	// Validate amount (must be positive and within business limits)
+	if s.Amount <= 0 {
+		return errors.New("amount must be positive")
+	}
+	if s.Amount > 1_000_000_00 { // $1M limit
+		return errors.New("amount exceeds maximum allowed ($1M)")
+	}
+
+	// Validate description (required and reasonable length)
+	trimmedDesc := strings.TrimSpace(s.Description)
+	if trimmedDesc == "" {
+		return errors.New("description is required")
+	}
+	if len(trimmedDesc) > 500 {
+		return errors.New("description exceeds maximum length (500 characters)")
+	}
+
+	// Additional business validations could be added here:
+	// - Check for duplicate ItemIDs (would require state tracking)
+	// - Validate amount precision (must be valid cents)
+	// - Check business rules (hourly limits, etc.)
+
+	return nil
 }

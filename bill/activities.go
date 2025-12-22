@@ -7,34 +7,25 @@ import (
 	"fees-api/money"
 )
 
-func FinalizeBillActivity(ctx context.Context, state BillState, closedAt time.Time) error {
-	b, err := GetBill(ctx, state.BillID)
-	if err != nil {
-		return err
-	}
-
-	b.Status = Closed
-	b.Total = state.Total
-	b.ClosedAt = &closedAt
-
-	return UpdateBill(ctx, b)
+func FinalizeBillActivity(ctx context.Context, billID string, closedAt time.Time) error {
+	// Only update status to CLOSED and closed_at (preserve existing total)
+	return UpdateBillStatusOnly(ctx, billID, Closed, &closedAt)
 }
 
-type LineItemInput struct {
-	ID          string
+type AddLineItemInput struct {
+	ItemID      string
 	BillID      string
 	Amount      money.Money
 	Description string
+	CreatedAt   time.Time
 }
 
-func PersistLineItemActivity(ctx context.Context, in LineItemInput) error {
-	item := &LineItem{
-		ID:          in.ID,
-		BillID:      in.BillID,
-		Amount:      in.Amount,
-		Description: in.Description,
+func AddLineItemActivity(ctx context.Context, input AddLineItemInput) error {
+	return InsertLineItemAndUpdateTotal(ctx, input.BillID, &LineItem{
+		ID:          input.ItemID,
+		BillID:      input.BillID,
+		Amount:      input.Amount,
+		Description: input.Description,
 		CreatedAt:   time.Now(),
-	}
-
-	return InsertLineItem(ctx, item)
+	})
 }
